@@ -32,64 +32,72 @@ FACTOR_CONFIGS = [
     # 成本相关因子
     {
         'name': 'CostRatio1',
-        'expression': 'toc1 / op',
+        'expression': 'toc1_norm / op_norm',
         'category': 'CostAnalysis',
         'normalize': True,
         'normalize_method': 'safe_zscore',
-        'winsorize': (0.01, 0.99)
+        'winsorize': (0.01, 0.99),
+        'base_fields': ['toc1', 'op']
     },
     {
         'name': 'CostRatio9',
-        'expression': 'toc9 / op',
+        'expression': 'toc9_norm / op_norm',
         'category': 'CostAnalysis',
         'normalize': True,
         'normalize_method': 'guassian_rank',
-        'winsorize': (0.01, 0.99)
+        'winsorize': (0.01, 0.99),
+        'base_fields': ['toc9', 'op']
     },
     {
         'name': 'CostRatio10',
-        'expression': 'toc10 / op',
+        'expression': 'toc10_norm / op_norm',
         'category': 'CostAnalysis',
         'normalize': True,
-        'normalize_method': 'cut_mad_10'
+        'normalize_method': 'cut_mad_10',
+        'base_fields': ['toc10', 'op']
     },
     {
         'name': 'CostRatio11',
-        'expression': 'toc11 / op',
+        'expression': 'toc11_norm / op_norm',
         'category': 'CostAnalysis',
         'normalize': True,
-        'normalize_method': 'winsorie'
+        'normalize_method': 'winsorie',
+        'base_fields': ['toc11', 'op']
     },
     {
         'name': 'CostRatio12',
-        'expression': 'toc12 / op',
+        'expression': 'toc12_norm / op_norm',
         'category': 'CostAnalysis',
         'normalize': True,
-        'normalize_method': 'safe_zscore'
+        'normalize_method': 'safe_zscore',
+        'base_fields': ['toc12', 'op']
     },
     # 投资收益与营业利润关系
     {
         'name': 'InvestmentProfitRatio',
-        'expression': 'inve_income / op',
+        'expression': 'inve_income_norm / op_norm',
         'category': 'ProfitAnalysis',
         'normalize': True,
-        'normalize_method': 'guassian_rank'
+        'normalize_method': 'guassian_rank',
+        'base_fields': ['inve_income', 'op']
     },
     # 净利润与营业利润关系
     {
         'name': 'NetProfitRatio',
-        'expression': 'np / op',
+        'expression': 'np_norm / op_norm',
         'category': 'ProfitAnalysis',
         'normalize': True,
-        'normalize_method': 'safe_zscore'
+        'normalize_method': 'safe_zscore',
+        'base_fields': ['np', 'op']
     },
     # 综合成本与净利润关系
     {
         'name': 'TotalCostToNetProfit',
-        'expression': '(toc1 + toc9 + toc10 + toc11 + toc12) / np',
+        'expression': '(toc1_norm + toc9_norm + toc10_norm + toc11_norm + toc12_norm) / np_norm',
         'category': 'ComprehensiveAnalysis',
         'normalize': True,
-        'normalize_method': 'cut_mad_10'
+        'normalize_method': 'cut_mad_10',
+        'base_fields': ['toc1', 'toc9', 'toc10', 'toc11', 'toc12', 'np']
     }
 ]
 
@@ -101,6 +109,21 @@ def calculate_factors(df, configs=FACTOR_CONFIGS):
     :return: 包含所有因子及标准化结果的DataFrame
     """
     result_df = df.copy()
+
+    # 对基础数据进行标准化
+    for config in configs:
+        for field in config['base_fields']:
+            if field in result_df.columns:
+                norm_col = f"{field}_norm"
+                method = config['normalize_method']
+                if method == 'guassian_rank':
+                    result_df[norm_col] = guassian_rank(result_df[field].fillna(0))
+                elif method == 'cut_mad_10':
+                    result_df[norm_col] = cut_mad_10(result_df[field].fillna(0))
+                elif method == 'winsorie':
+                    result_df[norm_col] = winsorie(result_df[field].fillna(0))
+                elif method == 'safe_zscore':
+                    result_df[norm_col] = safe_zscore(result_df[field])
 
     for config in configs:
         # 行业特异性检查
@@ -124,25 +147,9 @@ def calculate_factors(df, configs=FACTOR_CONFIGS):
                 q_high = result_df[config['name']].quantile(upper)
                 result_df[config['name']] = result_df[config['name']].clip(q_low, q_high)
 
-            # 标准化处理
-            if config.get('normalize', False):
-                norm_col = f"{config['name']}_norm"
-                method = config['normalize_method']
-                if method == 'guassian_rank':
-                    result_df[norm_col] = guassian_rank(result_df[config['name']].fillna(0))
-                elif method == 'cut_mad_10':
-                    result_df[norm_col] = cut_mad_10(result_df[config['name']].fillna(0))
-                elif method == 'winsorie':
-                    result_df[norm_col] = winsorie(result_df[config['name']].fillna(0))
-                elif method == 'safe_zscore':
-                    result_df[norm_col] = safe_zscore(result_df[config['name']])
-
         except Exception as e:
             print(f"计算因子 {config['name']} 失败: {str(e)}")
             result_df[config['name']] = np.nan
-            if config.get('normalize', False):
-                norm_col = f"{config['name']}_norm"
-                result_df[norm_col] = np.nan
 
     return result_df
 
@@ -165,7 +172,7 @@ if __name__ == "__main__":
     result = calculate_factors(data)
 
     print("\n计算结果样例:")
-    print(result[['CostRatio1', 'CostRatio1_norm']].head())
-    print("\n标准化结果描述:")
-    print(result.filter(regex='_norm$').describe())
+    print(result[['CostRatio1']].head())
+    print("\n部分结果描述:")
+    print(result[['CostRatio1', 'CostRatio9', 'InvestmentProfitRatio']].describe())
     
